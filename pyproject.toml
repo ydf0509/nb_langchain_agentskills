@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nb-langchain-agentskills"
+version = "0.1.0"
+description = "Agent Skills (SKILL.md) management for LangChain: middleware, progressive-disclosure tools, and composable loaders"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+keywords = ["langchain", "agent-skills", "skills", "agents", "llm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "langchain>=1.0",
+    "langchain-core>=1.0",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.4",
+]
+
+[project.urls]
+Repository = "https://github.com/nb17/nb_langchain_agentskills"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nb_langchain_agentskills"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/nb_langchain_agentskills", "tests", "README.md", "pyproject.toml", "LICENSE", "docs"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
