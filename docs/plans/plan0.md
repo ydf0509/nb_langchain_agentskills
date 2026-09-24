@@ -64,7 +64,7 @@ Loader 对外四个方法（命名以实现时为准，语义如下）：
 | `skill__list_skills` | 无（过滤走 Loader，不占入参） | `- **name**: description` 列表 |
 | `skill__load_skill` | `skill_name: str` | 见 §4 |
 | `skill__read_content` | `skill_name: str`, `file_path: str` | 文件内容，见 §5 |
-| `skill__execute_script` | `skill_name: str`, `command: str`, `max_run_ms: int = 30000`, `working_directory: str \| None = None` | 见 §6 |
+| `skill__execute_script` | `skill_name: str`, `command: str`, `max_run_ms: int = 180000`, `working_directory: str \| None = None` | 见 §6 |
 
 `skill__get_skill_file_tree` 已砍掉，不做。文件列表由 `load_skill` 顺带返回，单一事实来源。
 
@@ -111,7 +111,7 @@ Loader 对外四个方法（命名以实现时为准，语义如下）：
 
 - `skill_name: str`：身份。做可见性校验 + 给前端显示"这次在跑哪个 skill"。
 - `command: str`：完整 shell 命令字符串，如 `python scripts/foo.py --a 1`。原样交 shell。写哪个 python 就是哪个，包不推断、不改写、不强制 sys.executable——用户不一定想用宿主服务的解释器，想固定解释器自己写提示词规定。
-- `max_run_ms: int = 30000`：毫秒。超时杀进程树，返回超时错误 + 已有部分输出。传 0 或负数直接参数报错，不当无限等待。
+- `max_run_ms: int = 180000`：毫秒。超时杀进程树，返回超时错误 + 已有部分输出。传 0 或负数直接参数报错，不当无限等待。
 - `working_directory: str | None = None`：绝对路径形态，语义是 skill 根的子目录。为空默认 skill 根。必做 `resolve() + is_relative_to(skill_root)` 校验，逃出 skill 根直接拒绝。与 `read_content` 共用同一个校验函数。
 - `skill_name` 与 `working_directory` 不一致（A 的名、B 的目录）直接报错不执行，避免前端显示和实际执行对不上。
 

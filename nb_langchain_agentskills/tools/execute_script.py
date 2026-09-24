@@ -25,7 +25,7 @@ class ExecuteScriptArgs(BaseModel):
         )
     )
     max_run_ms: int = Field(
-        default=30_000,
+        default=180_000,
         description="Timeout in milliseconds.",
     )
     working_directory: str | None = Field(
@@ -55,7 +55,7 @@ class ExecuteSkillTool(BaseTool):
         self,
         skill_name: str,
         command: str,
-        max_run_ms: int = 30_000,
+        max_run_ms: int = 180_000,
         working_directory: str | None = None,
     ) -> str:
         try:

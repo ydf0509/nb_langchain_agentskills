@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_TIMEOUT_MS = 30_000
+DEFAULT_TIMEOUT_MS = 180_000
 MAX_OUTPUT_CHARS = 60_000
 
 _POWERSHELL_EXIT_TAIL = (

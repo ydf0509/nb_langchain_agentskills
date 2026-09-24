@@ -2,12 +2,41 @@
 
 LangChain 的 Agent Skills（SKILL.md）工具包：扫描 skill 目录，把 skill 清单注入系统提示，并提供 4 个工具让 agent 按需加载正文、读取文件、执行脚本。
 
-## 功能
+特点：
 
-- 递归扫描 SKILL.md 目录（支持任意深度嵌套），坏 SKILL.md 收集为警告，不中断扫描
-- skill 清单自动注入系统提示并定期刷新；正文与文件内容实时读取
-- 4 个 agent 工具：列出、加载、读取、执行
-- 支持 skill 黑白名单、多目录合并、自定义 prompt 格式
+- **递归发现与热刷新**：单个目录下任意深度嵌套的 SKILL.md 都能被扫描到，坏文件只收集为警告、不中断扫描；技能清单按 TTL 自动重扫（默认 60 秒），长驻进程新增或删除技能无需重启，正文与文件始终实时读盘。
+- **多目录合并**：可同时挂载多个 skills 目录，同名技能后者覆盖（last wins），天然支持"全局技能 + 项目技能"叠加。
+- **运行时黑白名单**：黑名单与白名单都对"列出、加载、读文件、解析目录"四条链路生效，不存在"列表看不见但仍能加载"；名单集合按引用持有，原地增删立即生效，无需重建 agent。
+- **渐进式披露**：系统提示只注入技能名与一句话描述，正文、文件、脚本在 agent 调用工具时才按需加载，不占用额外上下文。
+- **跨平台脚本执行**：内置命令执行器（Windows 走 PowerShell、POSIX 走 bash），自动把技能根目录与 `scripts/` 注入 `PYTHONPATH`，超时终止进程树（默认 180 秒），并拦截 `../` 路径穿越。
+
+## 组成
+
+一条数据流串起全部组件，每层都可单独替换：
+
+```text
+DirectorySkillLoader（技能来源，可多个）
+        │  CompositeSkillLoader 合并（last wins）
+        ▼
+Allowed / BlacklistSkillLoader（可见性过滤，可叠加或省略）
+        │
+        ▼
+SkillsMiddleware  ── 注入系统提示（仅 name + description）
+        │            注册 4 个工具
+        ▼
+skill__list_skills / skill__load_skill / skill__read_content / skill__execute_script
+                                              （执行走 CommandExecutor）
+```
+
+| 组件 | 职责 |
+|---|---|
+| `DirectorySkillLoader` | 从本地目录递归发现并读取技能 |
+| `CompositeSkillLoader` | 合并多个来源，同名后者覆盖 |
+| `AllowedSkillLoader` / `BlacklistSkillLoader` | 白名单 / 黑名单过滤，四链路全拦截 |
+| `SkillsMiddleware` | 注入技能清单提示、注册工具，可自定义 prompt |
+| `CommandExecutor` | 跨平台 shell 执行，超时管控与 PYTHONPATH 注入 |
+
+所有 Loader 实现同一接口（`list_skills / load_skill / read_content / resolve_root`），可自行实现后接入。工具的入参与中间件参数见下文 [工具](#工具) 与 [配置](#配置)。
 
 ## 安装
 
@@ -74,7 +103,7 @@ Run `scripts/fill.py` to fill forms.
 | `skill__list_skills` | 无 | 列出所有可用 skill |
 | `skill__load_skill` | `skill_name` | 返回 `<skill_directory>`（根目录）/`<skill_files>`（文件清单，含 SKILL.md）/`<skill_instructions>`（正文）三段式 XML |
 | `skill__read_content` | `skill_name`, `file_path` | 读 skill 下任意文件；`file_path` 支持相对（相对 skill 根）或绝对路径 |
-| `skill__execute_script` | `skill_name`, `command`, `max_run_ms=30000`, `working_directory=None` | 在 skill 目录内执行 shell 命令，返回 `exit_code / duration_ms / stdout / stderr` |
+| `skill__execute_script` | `skill_name`, `command`, `max_run_ms=180000`, `working_directory=None` | 在 skill 目录内执行 shell 命令，返回 `exit_code / duration_ms / stdout / stderr` |
 
 `skill__execute_script`：
 
