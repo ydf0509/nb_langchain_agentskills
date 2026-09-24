@@ -26,7 +26,7 @@ class ExecuteScriptArgs(BaseModel):
     )
     max_run_ms: int = Field(
         default=30_000,
-        description="Timeout in milliseconds; the process tree is killed on timeout.",
+        description="Timeout in milliseconds.",
     )
     working_directory: str | None = Field(
         default=None,
@@ -42,13 +42,12 @@ class ExecuteSkillTool(BaseTool):
 
     name: str = "skill__execute_script"
     description: str = (
-        "Run a shell command belonging to a skill (e.g. a script shipped in the "
-        "skill's scripts/ folder). Use skill__load_skill first to learn which "
-        "scripts exist and how to call them. Returns exit_code, duration_ms, "
-        "stdout and stderr; on non-zero exit the output is still returned so "
-        "you can fix the command and retry."
+        "Run a shell command belonging to a skill, e.g. one of the scripts "
+        "the skill provides. Use skill__load_skill first to see the available "
+        "scripts. Returns exit_code, duration_ms, stdout and stderr."
     )
     loader: SkillLoader
+    args_schema: type[BaseModel] = ExecuteScriptArgs
     executor: CommandExecutor
     _not_serializable: ClassVar[bool] = True
 

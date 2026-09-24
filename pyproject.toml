@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nb-langchain-agentskills"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Agent Skills (SKILL.md) management for LangChain: middleware, progressive-disclosure tools, and composable loaders"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 keywords = ["langchain", "agent-skills", "skills", "agents", "llm"]
 classifiers = [
@@ -15,6 +15,8 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
@@ -34,13 +36,16 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://github.com/nb17/nb_langchain_agentskills"
+Repository = "https://github.com/ydf0509/nb_langchain_agentskills"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/nb_langchain_agentskills"]
+packages = ["nb_langchain_agentskills"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/nb_langchain_agentskills", "tests", "README.md", "pyproject.toml", "LICENSE", "docs"]
+include = ["nb_langchain_agentskills", "tests", "README.md", "pyproject.toml", "LICENSE"]
+
+[tool.hatch.version]
+path = "nb_langchain_agentskills/__init__.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -48,4 +53,4 @@ asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 110
-target-version = "py312"
+target-version = "py310"

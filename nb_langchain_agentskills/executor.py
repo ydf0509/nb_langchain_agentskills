@@ -1,11 +1,19 @@
 """Shell command executor for skill scripts.
 
-Runs a full command string through the platform shell (powershell on
-Windows, bash on POSIX), enforces a timeout that kills the entire process
-tree, captures stdout/stderr with truncation, and can prepend skill
-directories to PYTHONPATH.
+Runs a full command string through the platform shell, enforces a timeout
+that kills the entire process tree, captures stdout/stderr with truncation,
+and can prepend skill directories to PYTHONPATH.
+
+On Windows the command runs via ``powershell -EncodedCommand`` (base64 of the
+UTF-16LE script), so quoting inside the command survives the command line
+verbatim. Output is decoded as UTF-8 first and falls back to the ANSI code
+page (``mbcs``, e.g. GBK on Chinese Windows) and then the preferred locale
+encoding when the bytes are not valid UTF-8, so native tools that print in
+the console codepage remain readable even under Python's UTF-8 mode.
 """
 
+import base64
+import locale
 import os
 import signal
 import subprocess
@@ -16,6 +24,10 @@ from pathlib import Path
 
 DEFAULT_TIMEOUT_MS = 30_000
 MAX_OUTPUT_CHARS = 60_000
+
+_POWERSHELL_EXIT_TAIL = (
+    '; if ($LASTEXITCODE -is [int]) { exit $LASTEXITCODE } else { exit 0 }'
+)
 
 
 @dataclass
@@ -35,7 +47,7 @@ class ExecutionResult:
             f"duration_ms: {self.duration_ms}",
         ]
         if self.timed_out:
-            parts.append("timed_out: true (process tree killed)")
+            parts.append("timed_out: true")
         parts.append("")
         parts.append("stdout:")
         parts.append(self.stdout or "(empty)")
@@ -51,9 +63,35 @@ def _truncate(text: str, limit: int) -> str:
     return text[:limit] + f"\n[truncated: showing first {limit} of {len(text)} characters]"
 
 
+def _fallback_encodings() -> list[str]:
+    encodings: list[str] = []
+    if os.name == "nt":
+        encodings.append("mbcs")
+    preferred = locale.getpreferredencoding(False)
+    if preferred and preferred.lower() != "utf-8":
+        encodings.append(preferred)
+    return encodings
+
+
+def _decode_output(data: bytes) -> str:
+    if not data:
+        return ""
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        for encoding in _fallback_encodings():
+            try:
+                return data.decode(encoding)
+            except (UnicodeDecodeError, LookupError):
+                continue
+        return data.decode("utf-8", errors="replace")
+
+
 def _build_shell_command(command: str) -> list[str]:
     if os.name == "nt":
-        return ["powershell", "-NoProfile", "-NonInteractive", "-Command", command]
+        script = command + _POWERSHELL_EXIT_TAIL
+        encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+        return ["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]
     return ["bash", "-c", command]
 
 
@@ -89,9 +127,6 @@ class CommandExecutor:
         popen_kwargs: dict = {
             "stdout": subprocess.PIPE,
             "stderr": subprocess.PIPE,
-            "text": True,
-            "encoding": "utf-8",
-            "errors": "replace",
             "cwd": str(cwd),
             "env": env,
         }
@@ -103,18 +138,20 @@ class CommandExecutor:
         start = time.monotonic()
         proc = subprocess.Popen(_build_shell_command(command), **popen_kwargs)
 
-        stdout_buf: list[str] = []
-        stderr_buf: list[str] = []
-        read_out = threading.Thread(target=lambda: stdout_buf.append(proc.stdout.read() or ""))
-        read_err = threading.Thread(target=lambda: stderr_buf.append(proc.stderr.read() or ""))
+        stdout_buf: list[bytes] = []
+        stderr_buf: list[bytes] = []
+        read_out = threading.Thread(target=lambda: stdout_buf.append(proc.stdout.read() or b""))
+        read_err = threading.Thread(target=lambda: stderr_buf.append(proc.stderr.read() or b""))
         read_out.start()
         read_err.start()
 
         timed_out = False
         try:
             proc.wait(timeout=timeout_ms / 1000)
+            t_end = time.monotonic()
         except subprocess.TimeoutExpired:
             timed_out = True
+            t_end = time.monotonic()
             self._kill_tree(proc)
             try:
                 proc.wait(timeout=5)
@@ -123,14 +160,14 @@ class CommandExecutor:
 
         read_out.join(timeout=5)
         read_err.join(timeout=5)
-        duration_ms = int((time.monotonic() - start) * 1000)
+        duration_ms = int((t_end - start) * 1000)
 
         return ExecutionResult(
             command=command,
             exit_code=proc.returncode,
             duration_ms=duration_ms,
-            stdout=_truncate(stdout_buf[0] if stdout_buf else "", MAX_OUTPUT_CHARS),
-            stderr=_truncate(stderr_buf[0] if stderr_buf else "", MAX_OUTPUT_CHARS),
+            stdout=_truncate(_decode_output(stdout_buf[0] if stdout_buf else b""), MAX_OUTPUT_CHARS),
+            stderr=_truncate(_decode_output(stderr_buf[0] if stderr_buf else b""), MAX_OUTPUT_CHARS),
             timed_out=timed_out,
         )
 

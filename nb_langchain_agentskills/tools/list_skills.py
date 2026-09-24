@@ -1,14 +1,16 @@
 """skill__list_skills: list all visible skills."""
 
+import html
 from typing import ClassVar
 
 from langchain_core.tools import BaseTool
 
+from ..exceptions import SkillsError
 from ..loaders.base import SkillLoader
 
 
 class ListSkillsTool(BaseTool):
-    """List all available skills with names and descriptions."""
+    """List all available skills with their names and descriptions."""
 
     name: str = "skill__list_skills"
     description: str = (
@@ -20,7 +22,12 @@ class ListSkillsTool(BaseTool):
     _not_serializable: ClassVar[bool] = True
 
     def _run(self) -> str:
-        skills = self.loader.list_skills()
+        try:
+            skills = self.loader.list_skills()
+        except SkillsError as exc:
+            return f"Error: {exc}"
         if not skills:
             return "No skills available."
-        return "\n".join(f"- **{skill.name}**: {skill.description}" for skill in skills)
+        return "\n".join(
+            f"- **{html.escape(skill.name)}**: {html.escape(skill.description)}" for skill in skills
+        )

@@ -34,7 +34,7 @@ Loader 对外四个方法（命名以实现时为准，语义如下）：
 - `read_content(skill_name, file_path) -> str`：读 skill 内任意文件。
 - `resolve_root(skill_name) -> Path`：返回 skill 根目录绝对路径。`execute_script` 的 cwd 校验、`load_skill` 的路径返回都调它。
 
-包内自带一个最简的多目录 Composite 实现和一个最简的 allowed 白名单过滤器做便利设施，但 lc-agent 那套三值语义 + overlay 覆盖策略是 lc-agent 私有策略，不进包。包保持中立，只保证"包得住"。
+包内自带最简便利设施：多目录 Composite、allowed 白名单过滤器、blocked 黑名单过滤器，但 lc-agent 那套三值语义 + overlay 覆盖策略是 lc-agent 私有策略，不进包。包保持中立，只保证"包得住"。
 
 ### 2.1 多来源优先级（已定：last wins）
 
@@ -53,6 +53,7 @@ Loader 对外四个方法（命名以实现时为准，语义如下）：
 - frontmatter.name 必填且按 agentskills 规范校验（小写字母数字连字符、不超过 64、无连续与首尾连字符）；缺失或非法 → 不算 skill，但错误必须收集进警告列表上报，禁止静默跳过（旧包静默跳过是坑：skill 死活不出现且无任何报错）。
 - 同名冲突规则一刀切：跨来源同名 → last wins（有意分层，是 feature）；单一来源内部同名 → 直接报错 fail fast（几乎必然是复制粘贴事故，是 bug）。
 - SkillMetadata 可选字段 license / compatibility / metadata / allowed_tools 只解析透传；allowed_tools 的语义（加载后工具白名单）Phase 1 不实现，留口子。
+- 热重载语义（清单 TTL 自动刷新 + 正文实时，已实现）：清单（name / description / root）缓存，默认每 60 秒最多重扫一次（ttl_seconds 可调，0 = 关闭自动刷新只留手动 reload()）；锁 + TTL 双重防抖；list / load / read / execute 四方法共用同一 TTL 界。正文永不缓存，改已有 skill 的文件立即生效。middleware 每轮模型调用对比清单签名，变了才重建 prompt——扫描异常保留上一份清单不炸模型调用。对照旧包：旧包每次工具调用实时扫盘（IO 放大），middleware 却把清单固化在构造时（split-brain）；新包 TTL 有界 + 三处同视图。
 
 ## 3. 工具清单（4 个，默认全给）
 
@@ -75,15 +76,20 @@ Loader 对外四个方法（命名以实现时为准，语义如下）：
 
 返回三段式，顺序固定：
 
-    Skill directory: <skill 根目录绝对路径>
+    <skill_directory>
+    <skill 根目录绝对路径>
+    </skill_directory>
 
+    <skill_files>
+    - <相对 skill 根的相对路径，一行一个，含根 SKILL.md>
+    </skill_files>
+
+    <skill_instructions>
     <SKILL.md 正文 body>
+    </skill_instructions>
 
-    **Files** (use skill__read_content to read):
-    - <相对 skill 根的相对路径，一行一个>
-
-- 路径行放第一行，最显眼。是 skill 根目录绝对路径，不是 SKILL.md 文件路径。
-- 文件列表范围与 `read_content` 可读范围一致（skill 下所有文件，相对路径扁平或树形其一，选定后全包统一）。不允许"列表里没有但 read 能读到"的不一致。
+- 三段各自用小写蛇形 XML 标签包住，风格与注入提示词的 `<available_skills>` 一致。不追求被程序解析，内容裸嵌入不转义。
+- 文件列表范围与 `read_content` 可读范围一致（skill 下所有文件，包括根 SKILL.md，相对路径扁平或树形其一，选定后全包统一）。不允许"列表里没有但 read 能读到"的不一致。
 - 多来源同名时返回的必须是生效的那个（覆盖胜出者）的路径，不许返回被覆盖掉的。
 
 ## 5. skill__read_content
@@ -134,7 +140,7 @@ Middleware 注册工具时顺手补齐三件事（这是旧包的坑，新包内
 
 ## 8. 遗留事项
 
-原五条待定项已全部定案并归位正文：多来源 last wins 及三件套进 §2.1；发现 / 命名 / 冲突规则进 §2.2；热重载（默认缓存 + reload() 手动失效，不做每轮扫盘）见 §2.2 与 §9；SkillMetadata 字段进 §2.2。
+原五条待定项已全部定案并归位正文：多来源 last wins 及三件套进 §2.1；发现 / 命名 / 冲突规则进 §2.2；热重载（清单 TTL 60s 自动刷新，reload() 手动兜底，正文实时读盘，不做每轮扫盘）见 §2.2 与 §9；SkillMetadata 字段进 §2.2。
 
 剩余：
 
@@ -142,6 +148,7 @@ Middleware 注册工具时顺手补齐三件事（这是旧包的坑，新包内
 2. lc-agent 侧迁移清单（单独出迁移计划）：file_write 的 allowed_directories 需包含 skill 目录，否则 agent 拿到真实路径也写不进；旧包 import 点（app.py / engine.py / routes/skills.py / skill_middleware.py / filtered_loader.py / script_executor.py）逐个替换；WindowsScriptExecutor 补丁作废。
 3. Phase 2 评估：allowed_tools 语义（加载后工具白名单）。
 4. 可选未来：on_conflict 严格模式（冲突即报错），测试与排障用，Phase 1 不做。
+5. 弱点自审修复（已完成）：load_skill 正文 200k 截断、skill__list_skills 输出 HTML 转义、composite 清单按名排序、SkillLoader.last_warnings 类属性坑改 per-instance property、扫描失败推进 TTL 时钟（坏目录最多每 TTL 炸一次）、Windows 命令改 -EncodedCommand（引号保真）、输出 UTF-8 解码失败回退 locale（GBK）、duration_ms 不含杀进程等待、文件列表 200 条上限、source 保留字已文档化、版本号 hatch 动态读 __init__、新增 create_agent 端到端冒烟与并发 TTL 用例。
 
 ## 9. 非目标（明确不做）
 

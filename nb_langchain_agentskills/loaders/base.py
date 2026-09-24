@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from ..models import SkillContent, SkillMetadata
+from ..models import SkillContent, SkillMetadata, SkillLoadWarning
 
 
 class SkillLoader(ABC):
@@ -12,9 +12,23 @@ class SkillLoader(ABC):
     Subclass or wrap this to control which skills are visible and where they
     come from. Tools and the middleware never touch the filesystem directly;
     every path question goes through a loader.
+
+    ``last_warnings`` is per-instance (never shared across instances) and
+    defaults to an empty list; implementations that scan should overwrite it
+    with the warnings of the most recent scan.
     """
 
-    last_warnings: list = []
+    @property
+    def last_warnings(self) -> list[SkillLoadWarning]:
+        warnings = self.__dict__.get("_last_warnings")
+        if warnings is None:
+            warnings = []
+            self.__dict__["_last_warnings"] = warnings
+        return warnings
+
+    @last_warnings.setter
+    def last_warnings(self, value: list) -> None:
+        self.__dict__["_last_warnings"] = list(value)
 
     @abstractmethod
     def list_skills(self) -> list[SkillMetadata]:

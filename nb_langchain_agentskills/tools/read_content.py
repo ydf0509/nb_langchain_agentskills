@@ -33,6 +33,7 @@ class ReadContentTool(BaseTool):
         "see the file list. Paths outside the skill root are rejected."
     )
     loader: SkillLoader
+    args_schema: type[BaseModel] = ReadContentArgs
     _not_serializable: ClassVar[bool] = True
 
     def _run(self, skill_name: str, file_path: str) -> str:

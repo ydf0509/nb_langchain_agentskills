@@ -3,10 +3,11 @@
 from .base import SkillLoader
 from .composite import CompositeSkillLoader
 from .directory import DirectorySkillLoader
-from .filters import AllowedSkillLoader
+from .filters import AllowedSkillLoader, BlacklistSkillLoader
 
 __all__ = [
     "AllowedSkillLoader",
+    "BlacklistSkillLoader",
     "CompositeSkillLoader",
     "DirectorySkillLoader",
     "SkillLoader",

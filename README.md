@@ -1,20 +1,42 @@
 # nb_langchain_agentskills
 
-专为 LangChain 设计的 Agent Skills（SKILL.md）管理包。提供 SKILL.md 解析、目录扫描、middleware 注入和 4 个开箱即用的 LangChain 工具，实现 progressive disclosure：skill 清单常驻系统提示，正文按需加载。
+LangChain 的 Agent Skills（SKILL.md）工具包：扫描 skill 目录，把 skill 清单注入系统提示，并提供 4 个工具让 agent 按需加载正文、读取文件、执行脚本。
 
-只服务 LangChain（`create_agent` + middleware 生态）。核心扩展点是 **Loader 抽象**——过滤、overlay、可见性控制全部在这一层完成，工具层与 prompt 永远拿到同一份视图。
+## 功能
+
+- 递归扫描 SKILL.md 目录（支持任意深度嵌套），坏 SKILL.md 收集为警告，不中断扫描
+- skill 清单自动注入系统提示并定期刷新；正文与文件内容实时读取
+- 4 个 agent 工具：列出、加载、读取、执行
+- 支持 skill 黑白名单、多目录合并、自定义 prompt 格式
 
 ## 安装
 
-Phase 1（当前）从源码安装：
+要求 Python 3.10 及以上版本。
 
 ```bash
-pip install -e D:/codes/nb_langchain_agentskills
+pip install nb-langchain-agentskills
+```
+
+## 快速开始
+
+```python
+from langchain.agents import create_agent
+from nb_langchain_agentskills import DirectorySkillLoader, SkillsMiddleware
+
+loader = DirectorySkillLoader("./my-skills")
+agent = create_agent(
+    model="openai:gpt-4o",
+    middleware=[SkillsMiddleware(loader=loader)],
+)
+
+result = agent.invoke({"messages": [("user", "帮我处理一个 PDF 文件")]})
+for message in result["messages"]:
+    message.pretty_print()
 ```
 
 ## SKILL.md 格式
 
-每个 skill 是一个包含 `SKILL.md` 的目录（支持任意深度嵌套）：
+每个 skill 是一个包含 `SKILL.md` 的目录：
 
 ```text
 my-skills/
@@ -41,47 +63,41 @@ Read `references/forms.md` for form field conventions.
 Run `scripts/fill.py` to fill forms.
 ```
 
-`name` 必填：小写字母数字与单个内部连字符，不超过 64 字符（agentskills.io 规范）。`description` 必填且不超过 1024 字符——它是 agent 决定"要不要用这个 skill"的唯一依据，写**何时适用**，不只写是什么。其余字段（`license` / `compatibility` / `metadata` / `allowed_tools` 及任意自定义字段）解析后透传。
+`name` 必填：小写字母数字与单个内部连字符，不超过 64 字符（[agentskills.io](https://agentskills.io) 规范）。`description` 必填且不超过 1024 字符，写清楚何时适用——agent 靠它判断要不要用这个 skill。其余字段（`license` / `compatibility` / `metadata` / `allowed_tools` 及任意自定义字段）解析后透传；`source` 是保留字，会被忽略。
 
-## 快速开始
+## 工具
 
-```python
-from langchain.agents import create_agent
-from nb_langchain_agentskills import DirectorySkillLoader, SkillsMiddleware
-
-loader = DirectorySkillLoader("./my-skills")
-agent = create_agent(
-    model="openai:gpt-4o",
-    middleware=[SkillsMiddleware(loader=loader)],
-)
-```
-
-middleware 默认行为：
-
-1. 把 skill 清单（name + description）注入系统提示——agent 不调工具也能看到；
-2. 注册 4 个工具，agent 按需加载正文、读文件、执行脚本。
-
-## 四个工具
+`SkillsMiddleware` 注册以下 4 个工具，可用 `exclude_tools` 去掉任何一个：
 
 | 工具 | 入参 | 说明 |
 |---|---|---|
-| `skill__list_skills` | 无 | 列出所有可用 skill。清单已进系统提示，此工具用于主动刷新确认 |
-| `skill__load_skill` | `skill_name` | 返回三段式：**skill 根目录绝对路径**（首行）+ SKILL.md 正文 + 文件列表 |
-| `skill__read_content` | `skill_name`, `file_path` | 读 skill 下**任意文件**。`file_path` 收相对（相对 skill 根）或绝对路径；穿越与根外路径一律拒绝 |
-| `skill__execute_script` | `skill_name`, `command`, `max_run_ms=30000`, `working_directory=None` | 在 skill 目录内执行 shell 命令，返回 `exit_code / duration_ms / stdout / stderr` 四段 |
+| `skill__list_skills` | 无 | 列出所有可用 skill |
+| `skill__load_skill` | `skill_name` | 返回 `<skill_directory>`（根目录）/`<skill_files>`（文件清单，含 SKILL.md）/`<skill_instructions>`（正文）三段式 XML |
+| `skill__read_content` | `skill_name`, `file_path` | 读 skill 下任意文件；`file_path` 支持相对（相对 skill 根）或绝对路径 |
+| `skill__execute_script` | `skill_name`, `command`, `max_run_ms=30000`, `working_directory=None` | 在 skill 目录内执行 shell 命令，返回 `exit_code / duration_ms / stdout / stderr` |
 
-`skill__execute_script` 细节：
+`skill__execute_script`：
 
-- `command` 是完整 shell 命令字符串，原样交 shell（Windows=powershell，POSIX=bash）。写哪个 python 就是哪个，包不推断不改写。
-- `working_directory` 为空默认 skill 根；相对路径相对 skill 根解析；任何情况都不得逃出 skill 根。
-- 执行前自动把 skill 根目录和 `scripts/` 拼到 `PYTHONPATH` 最前面（只影响 python 命令；可用 `enable_pythonpath=False` 关闭）。
-- 超时杀整个进程树；超长输出截断并注明。
+- `command` 是完整 shell 命令字符串，原样交给 shell 执行（Windows 使用 powershell，POSIX 使用 bash）
+- `working_directory` 为空时为 skill 根；相对路径相对 skill 根解析；不允许逃出 skill 根
+- 执行前把 skill 根目录和 `scripts/` 前插到 `PYTHONPATH`（只影响 python 命令；`enable_pythonpath=False` 可关闭）
+- 超时终止运行；超长输出截断并注明
 
-> **安全声明**：本包**不做命令黑名单、不做沙箱**。`skill__execute_script` 等价于任意代码执行。生产使用请配合宿主框架的审批、沙箱或权限机制。
+> 安全提示：`skill__execute_script` 会原样执行任意 shell 命令，本包不做命令过滤与沙箱。请仅在具备审批、沙箱或权限控制的可信环境中使用。
 
-## Loader 扩展点（核心）
+## 配置
 
-过滤与可见性控制全部在 Loader 层完成，不要在工具层做：
+### SkillsMiddleware
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `loader` | 必填 | 任意 `SkillLoader` 实例 |
+| `exclude_tools` | `None` | 不注册的工具名集合，如 `{"skill__list_skills"}` |
+| `prompt_builder` | `None` | `(skills: list[SkillMetadata]) -> str`，接管系统提示注入的格式；默认模板对 name / description 做 HTML 转义 |
+| `executor` | `None` | 自定义 `CommandExecutor` |
+| `enable_pythonpath` | `True` | 执行命令时是否注入 PYTHONPATH |
+
+### SkillLoader
 
 ```python
 from nb_langchain_agentskills import (
@@ -101,34 +117,16 @@ middleware = SkillsMiddleware(
 )
 ```
 
-### 多来源优先级：last wins（重要）
-
-`CompositeSkillLoader` 按 **last wins**（后者覆盖前者）合并同名 skill，与官方 deepagents 一致，**与 langchain-agentskills 相反**。来源顺序按"通用 → 具体"排列：
-
-```python
-CompositeSkillLoader([builtin, user, project])   # project 覆盖 user 覆盖 builtin
-```
-
-同名覆盖发生时记录 debug 日志。composite 内部按名字合并成单字典，胜者的路径在 `list / load / read / execute` 四个方法里完全一致。
-
-**从 `langchain-agentskills` 迁移**：它的 Composite 是 first wins，迁移时把来源列表顺序反过来即可。
-
-### 自定义 prompt
-
-`prompt_builder: (skills: list[SkillMetadata]) -> str` 完全接管系统提示注入的格式；过滤归 Loader，格式归 Builder。默认模板对 name/description 做 HTML 转义防注入。
+- `DirectorySkillLoader(root, exclude_dirs=None, ttl_seconds=60)`：递归扫描本地目录；点开头目录默认跳过，`exclude_dirs` 支持 fnmatch 通配
+- `CompositeSkillLoader(loaders, ttl_seconds=60)`：合并多个来源；同名 skill 后一个来源覆盖前一个，来源顺序从通用到具体排列（如 `[全局, 项目]`）；覆盖时记录 debug 日志
+- `AllowedSkillLoader(inner, allowed=None)`：只暴露白名单内的 skill；`allowed` 集合按引用持有，原地增删即刻生效；`allowed=None` 表示全部
+- `BlacklistSkillLoader(inner, blocked=None)`：只隐藏黑名单内的 skill，其余照常可见；`blocked` 集合按引用持有，原地增删即刻生效；`blocked=None` 等价空集
 
 ### 热重载
 
-默认扫描一次后缓存。新增/修改 skill 后调用 `loader.reload()` 手动失效重建。`loader.last_warnings` 保存最近一次扫描的警告（坏 SKILL.md 不会被静默吞掉）。
-
-## 行为保证（精选）
-
-- 读文件统一 `utf-8-sig`：容忍 BOM，Windows 中文不乱码。
-- 扫描用 `os.walk` 剪枝：点开头目录默认跳过，`exclude_dirs` 命中不进入；只认 `SKILL.md` 精确大小写（变体记警告），跨平台行为一致。
-- 单一来源内部同名 → 直接报错（几乎必然是复制事故）；跨来源同名 → last wins（有意分层）。
-- 零 skill 不报错：middleware 优雅降级（不注入提示，工具仍注册）。
-- 二进制文件读取明确报错；超 200,000 字符的文本截断并注明。
-- 所有工具 `args_schema` 均 `extra="forbid"`，LLM 传错参数走模型自动重试链路而非硬崩。
+- skill 清单（name / description / 根路径）缓存，默认每 60 秒最多重扫一次：超期后的下一次调用自动重扫；`ttl_seconds=0` 关闭自动刷新，只用手动 `loader.reload()`
+- 正文与文件内容不缓存，`load_skill` 与 `read_content` 每次实时读盘，修改立即生效
+- `loader.last_warnings` 保存最近一次扫描的警告
 
 ## License
 

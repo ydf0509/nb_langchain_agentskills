@@ -27,7 +27,7 @@ def parse_skill_md(content: str) -> tuple[dict[str, Any], str]:
     in the body is preserved. Raises SkillValidationError with a precise
     reason when the file cannot be parsed.
     """
-    stripped = content.strip()
+    stripped = content.lstrip("\ufeff").strip()
     if not stripped.startswith(_FRONTMATTER):
         raise SkillValidationError("SKILL.md must start with '---' frontmatter")
 
@@ -56,7 +56,11 @@ def parse_skill_md(content: str) -> tuple[dict[str, Any], str]:
 
 
 def metadata_from_frontmatter(frontmatter: dict[str, Any], source: str = "local") -> SkillMetadata:
-    """Validate a frontmatter mapping and convert it to SkillMetadata."""
+    """Validate a frontmatter mapping and convert it to SkillMetadata.
+
+    A ``source`` key in the frontmatter is reserved (provenance is set by the
+    loader) and is discarded; do not use it in SKILL.md.
+    """
     data = dict(frontmatter)
     data.pop("source", None)
     try:

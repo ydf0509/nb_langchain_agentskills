@@ -10,6 +10,7 @@ SKILL_NAME_PATTERN = re.compile(r"^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$")
 MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 MAX_FILE_CHARS = 200_000
+MAX_FILES_LISTED = 200
 TRUNCATION_NOTICE = "\n\n[truncated: showing first {limit} of {total} characters]"
 
 
