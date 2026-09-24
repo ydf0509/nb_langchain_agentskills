@@ -19,7 +19,7 @@ class ExecuteScriptArgs(BaseModel):
     skill_name: str = Field(description="Name of the skill this command belongs to.")
     command: str = Field(
         description=(
-            "Full shell command to run, e.g. 'python scripts/fill.py --form a.pdf'. "
+            "shell command to run  a skill script, e.g. 'python scripts/fill.py --form a.pdf'. "
             "Executed with the platform shell (powershell on Windows, bash elsewhere) "
             "with the skill directory as the working directory."
         )
@@ -42,9 +42,9 @@ class ExecuteSkillTool(BaseTool):
 
     name: str = "skill__execute_script"
     description: str = (
-        "Run a shell command belonging to a skill, e.g. one of the scripts "
-        "the skill provides. Use skill__load_skill first to see the available "
-        "scripts. Returns exit_code, duration_ms, stdout and stderr."
+        "Run a shell command inside a skill directory, e.g. one of the scripts "
+        "the skill provides. Use skill__load_skill first to see the files it "
+        "provides. Returns exit_code, duration_ms, stdout and stderr."
     )
     loader: SkillLoader
     args_schema: type[BaseModel] = ExecuteScriptArgs
