@@ -11,6 +11,17 @@ from ..executor import CommandExecutor
 from ..loaders.base import SkillLoader
 
 
+def _emit_output_chunk(content: str) -> None:
+    if not content:
+        return
+    try:
+        from langchain_core.callbacks import dispatch_custom_event
+
+        dispatch_custom_event("command_output", {"content": content})
+    except Exception:
+        pass
+
+
 class ExecuteScriptArgs(BaseModel):
     """Arguments for skill__execute_script."""
 
@@ -44,7 +55,8 @@ class ExecuteSkillTool(BaseTool):
     description: str = (
         "Run a shell command inside a skill directory, e.g. one of the scripts "
         "the skill provides. Use skill__load_skill first to see the files it "
-        "provides. Returns exit_code, duration_ms, stdout and stderr."
+        "provides. Its output streams live as command_output events while "
+        "the command runs. Returns exit_code, duration_ms, stdout and stderr."
     )
     loader: SkillLoader
     args_schema: type[BaseModel] = ExecuteScriptArgs
@@ -83,6 +95,7 @@ class ExecuteSkillTool(BaseTool):
                 cwd=resolved,
                 timeout_ms=max_run_ms,
                 pythonpath_dirs=pythonpath_dirs,
+                on_output=_emit_output_chunk,
             )
         except ValueError as exc:
             return f"Error: {exc}"

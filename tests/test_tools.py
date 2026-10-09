@@ -119,3 +119,19 @@ def test_list_tool_escapes_html(tmp_path):
     out = ListSkillsTool(loader=loader)._run()
     assert "&lt;b&gt;&amp;desc&lt;/b&gt;" in out
     assert "<b>" not in out
+
+
+def test_execute_emits_command_output_events(loader, skill_tree, monkeypatch):
+    import langchain_core.callbacks as _callbacks
+
+    seen: list[tuple] = []
+    monkeypatch.setattr(
+        _callbacks, "dispatch_custom_event", lambda name, data: seen.append((name, data))
+    )
+    tool = ExecuteSkillTool(loader=loader, executor=CommandExecutor())
+    out = tool._run("refs-demo", py_script(skill_tree, "print(42)"))
+    assert "exit_code: 0" in out
+    assert "42" in out
+    assert seen, "expected command_output events during script execution"
+    assert all(name == "command_output" for name, _ in seen)
+    assert "42" in "".join(data["content"] for _, data in seen)

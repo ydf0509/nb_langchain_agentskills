@@ -113,3 +113,46 @@ def test_decode_output_mbcs_fallback():
 
 def test_decode_output_replaces_undecodable():
     assert _decode_output(b"\xff\xff\xff") == "\ufffd\ufffd\ufffd"
+
+
+def test_on_output_receives_stdout_chunks(tmp_path):
+    code = (
+        "import time\n"
+        "for i in range(3):\n"
+        "    print(f'line-{i}', flush=True)\n"
+        "    time.sleep(0.2)\n"
+    )
+    seen: list[str] = []
+    result = run_py(tmp_path, code, on_output=seen.append)
+    assert result.exit_code == 0
+    assert result.timed_out is False
+    assert "".join(seen).split() == ["line-0", "line-1", "line-2"]
+    assert "line-2" in result.stdout
+
+
+def test_on_output_error_does_not_break_run(tmp_path):
+    def _bad(chunk: str) -> None:
+        raise RuntimeError("boom")
+
+    result = run_py(tmp_path, "print(42)", on_output=_bad)
+    assert result.exit_code == 0
+    assert "42" in result.stdout
+
+
+def test_on_output_streams_stdout_and_stderr(tmp_path):
+    code = (
+        "import sys, time\n"
+        "print('out-1', flush=True)\n"
+        "print('err-1', file=sys.stderr, flush=True)\n"
+        "time.sleep(0.1)\n"
+        "print('out-2', flush=True)\n"
+    )
+    seen: list[str] = []
+    result = run_py(tmp_path, code, on_output=seen.append)
+    joined = "".join(seen)
+    assert "out-1" in joined
+    assert "err-1" in joined
+    assert "out-2" in joined
+    assert "out-1" in result.stdout
+    assert "err-1" in result.stderr
+    assert "err-1" not in result.stdout

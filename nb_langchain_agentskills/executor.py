@@ -19,6 +19,7 @@ import signal
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -102,7 +103,9 @@ def _apply_pythonpath(env: dict[str, str], dirs: list[Path]) -> None:
 
 
 class CommandExecutor:
-    """Execute skill commands with timeout, process-tree kill and truncation."""
+    """Execute skill commands with timeout, process-tree kill and truncation.
+    流式输出的
+    """
 
     def __init__(self, *, enable_pythonpath: bool = True) -> None:
         self.enable_pythonpath = enable_pythonpath
@@ -114,7 +117,17 @@ class CommandExecutor:
         cwd: Path,
         timeout_ms: int = DEFAULT_TIMEOUT_MS,
         pythonpath_dirs: list[Path] | None = None,
+        on_output: Callable[[str], None] | None = None,
     ) -> ExecutionResult:
+        """Run a command and wait for it to finish.
+
+        When ``on_output`` is given it is called from the calling thread
+        with each decoded stdout/stderr chunk as soon as it arrives, so
+        callers can forward live output (e.g. via LangChain custom events)
+        instead of waiting for the process to exit. Both streams share one
+        channel in arrival order. Callback errors are swallowed so
+        streaming never breaks the run.
+        """
         if not command or not command.strip():
             raise ValueError("command must be a non-empty string")
         if timeout_ms <= 0:
@@ -138,36 +151,86 @@ class CommandExecutor:
         start = time.monotonic()
         proc = subprocess.Popen(_build_shell_command(command), **popen_kwargs)
 
-        stdout_buf: list[bytes] = []
-        stderr_buf: list[bytes] = []
-        read_out = threading.Thread(target=lambda: stdout_buf.append(proc.stdout.read() or b""))
-        read_err = threading.Thread(target=lambda: stderr_buf.append(proc.stderr.read() or b""))
+        stdout_chunks: list[bytes] = []
+        stderr_chunks: list[bytes] = []
+        # stdout and stderr merged in arrival order for live streaming.
+        stream_chunks: list[bytes] = []
+        buf_lock = threading.Lock()
+
+        def _pump(stream, sink: list[bytes]) -> None:
+            try:
+                while True:
+                    line = stream.readline()
+                    if not line:
+                        break
+                    with buf_lock:
+                        sink.append(line)
+                        stream_chunks.append(line)
+            except (ValueError, OSError):
+                pass
+            finally:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+
+        def _emit(chunk: bytes) -> None:
+            if on_output is None:
+                return
+            try:
+                on_output(_decode_output(chunk))
+            except Exception:
+                pass
+
+        read_out = threading.Thread(target=_pump, args=(proc.stdout, stdout_chunks), daemon=True)
+        read_err = threading.Thread(target=_pump, args=(proc.stderr, stderr_chunks), daemon=True)
         read_out.start()
         read_err.start()
 
+        # Poll in the calling thread so on_output fires with the caller's
+        # context (e.g. LangChain parent run id for custom events).
         timed_out = False
-        try:
-            proc.wait(timeout=timeout_ms / 1000)
-            t_end = time.monotonic()
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            t_end = time.monotonic()
-            self._kill_tree(proc)
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                pass
+        deadline = start + timeout_ms / 1000
+        emitted = 0
+        t_end = start
+        while True:
+            with buf_lock:
+                pending = stream_chunks[emitted:]
+                exited = proc.poll() is not None
+            if pending:
+                emitted += len(pending)
+                _emit(b"".join(pending))
+            if exited:
+                t_end = time.monotonic()
+                break
+            now = time.monotonic()
+            if now >= deadline:
+                timed_out = True
+                t_end = now
+                self._kill_tree(proc)
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+                break
+            time.sleep(0.2)
 
         read_out.join(timeout=5)
         read_err.join(timeout=5)
+        with buf_lock:
+            remaining = stream_chunks[emitted:]
+            stdout_data = b"".join(stdout_chunks)
+            stderr_data = b"".join(stderr_chunks)
+        if remaining:
+            _emit(b"".join(remaining))
         duration_ms = int((t_end - start) * 1000)
 
         return ExecutionResult(
             command=command,
             exit_code=proc.returncode,
             duration_ms=duration_ms,
-            stdout=_truncate(_decode_output(stdout_buf[0] if stdout_buf else b""), MAX_OUTPUT_CHARS),
-            stderr=_truncate(_decode_output(stderr_buf[0] if stderr_buf else b""), MAX_OUTPUT_CHARS),
+            stdout=_truncate(_decode_output(stdout_data), MAX_OUTPUT_CHARS),
+            stderr=_truncate(_decode_output(stderr_data), MAX_OUTPUT_CHARS),
             timed_out=timed_out,
         )
 
