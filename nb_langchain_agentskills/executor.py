@@ -13,6 +13,7 @@ the console codepage remain readable even under Python's UTF-8 mode.
 """
 
 import base64
+import json
 import locale
 import os
 import signal
@@ -43,19 +44,14 @@ class ExecutionResult:
     timed_out: bool
 
     def to_text(self) -> str:
-        parts = [
-            f"exit_code: {self.exit_code}",
-            f"duration_ms: {self.duration_ms}",
-        ]
-        if self.timed_out:
-            parts.append("timed_out: true")
-        parts.append("")
-        parts.append("stdout:")
-        parts.append(self.stdout or "(empty)")
-        parts.append("")
-        parts.append("stderr:")
-        parts.append(self.stderr or "(empty)")
-        return "\n".join(parts)
+        payload = {
+            "exit_code": self.exit_code,
+            "duration_ms": self.duration_ms,
+            "timed_out": self.timed_out,
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+        }
+        return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def _truncate(text: str, limit: int) -> str:

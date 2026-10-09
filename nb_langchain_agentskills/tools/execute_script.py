@@ -55,8 +55,8 @@ class ExecuteSkillTool(BaseTool):
     description: str = (
         "Run a shell command inside a skill directory, e.g. one of the scripts "
         "the skill provides. Use skill__load_skill first to see the files it "
-        "provides. Its output streams live as command_output events while "
-        "the command runs. Returns exit_code, duration_ms, stdout and stderr."
+        "provides. Returns a JSON object: {\"exit_code\": int|null, "
+        "\"duration_ms\": int, \"timed_out\": bool, \"stdout\": str, \"stderr\": str}."
     )
     loader: SkillLoader
     args_schema: type[BaseModel] = ExecuteScriptArgs

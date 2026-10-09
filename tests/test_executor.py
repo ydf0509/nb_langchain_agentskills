@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 
@@ -26,11 +27,11 @@ def test_success_structure(tmp_path):
     assert result.exit_code == 0
     assert result.timed_out is False
     assert "42" in result.stdout
-    text = result.to_text()
-    assert "exit_code: 0" in text
-    assert "duration_ms:" in text
-    assert "stdout:" in text
-    assert "stderr:" in text
+    payload = json.loads(result.to_text())
+    assert payload["exit_code"] == 0
+    assert isinstance(payload["duration_ms"], int)
+    assert "42" in payload["stdout"]
+    assert payload["stderr"] == ""
 
 
 def test_non_zero_exit_returns_output(tmp_path):

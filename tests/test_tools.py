@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 
@@ -70,33 +71,37 @@ def test_args_schema_forbid(loader):
 def test_execute_success(loader, skill_tree):
     tool = ExecuteSkillTool(loader=loader, executor=CommandExecutor())
     out = tool._run("refs-demo", py_script(skill_tree, "print(42)"))
-    assert "exit_code: 0" in out
-    assert "42" in out
-    assert "duration_ms:" in out
+    payload = json.loads(out)
+    assert payload["exit_code"] == 0
+    assert "42" in payload["stdout"]
+    assert isinstance(payload["duration_ms"], int)
 
 
 def test_execute_pythonpath(loader, skill_tree):
     tool = ExecuteSkillTool(loader=loader, executor=CommandExecutor())
     code = 'import os; print(os.environ.get("PYTHONPATH", ""))'
     out = tool._run("refs-demo", py_script(skill_tree, code))
-    assert str(skill_tree / "refs-demo") in out
-    assert str(skill_tree / "refs-demo" / "scripts") in out
+    stdout = json.loads(out)["stdout"]
+    assert str(skill_tree / "refs-demo") in stdout
+    assert str(skill_tree / "refs-demo" / "scripts") in stdout
 
 
 def test_execute_non_zero_returns_output(loader, skill_tree):
     tool = ExecuteSkillTool(loader=loader, executor=CommandExecutor())
     code = 'import sys; print("boom"); sys.exit(3)'
     out = tool._run("refs-demo", py_script(skill_tree, code))
-    assert "exit_code: 3" in out
-    assert "boom" in out
+    payload = json.loads(out)
+    assert payload["exit_code"] == 3
+    assert "boom" in payload["stdout"]
 
 
 def test_execute_timeout_kills_tree(loader, skill_tree):
     tool = ExecuteSkillTool(loader=loader, executor=CommandExecutor())
     code = 'import time; print("started", flush=True); time.sleep(10)'
     out = tool._run("refs-demo", py_script(skill_tree, code), max_run_ms=1500)
-    assert "timed_out: true" in out
-    assert "started" in out
+    payload = json.loads(out)
+    assert payload["timed_out"] is True
+    assert "started" in payload["stdout"]
 
 
 def test_execute_validations(loader):
@@ -130,8 +135,9 @@ def test_execute_emits_command_output_events(loader, skill_tree, monkeypatch):
     )
     tool = ExecuteSkillTool(loader=loader, executor=CommandExecutor())
     out = tool._run("refs-demo", py_script(skill_tree, "print(42)"))
-    assert "exit_code: 0" in out
-    assert "42" in out
+    payload = json.loads(out)
+    assert payload["exit_code"] == 0
+    assert "42" in payload["stdout"]
     assert seen, "expected command_output events during script execution"
     assert all(name == "command_output" for name, _ in seen)
     assert "42" in "".join(data["content"] for _, data in seen)
