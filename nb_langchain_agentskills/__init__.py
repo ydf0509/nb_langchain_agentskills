@@ -18,7 +18,7 @@ from .loaders import (
 from .middleware import ALL_TOOL_NAMES, SkillsMiddleware
 from .models import SkillContent, SkillLoadWarning, SkillMetadata
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = [
     "ALL_TOOL_NAMES",
