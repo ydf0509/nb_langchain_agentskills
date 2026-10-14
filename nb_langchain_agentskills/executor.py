@@ -31,6 +31,13 @@ _POWERSHELL_EXIT_TAIL = (
     '; if ($LASTEXITCODE -is [int]) { exit $LASTEXITCODE } else { exit 0 }'
 )
 
+# PowerShell serializes its progress stream as CLIXML onto stderr whenever
+# stdout/stderr are redirected, e.g. the "Preparing modules for first use."
+# record emitted on first module autoload. That noise is unrelated to the
+# command itself, so silence the progress stream up front. Assignments emit
+# nothing, so neither stdout nor $LASTEXITCODE is affected.
+_POWERSHELL_PROGRESS_OFF = "$ProgressPreference='SilentlyContinue'; "
+
 
 @dataclass
 class ExecutionResult:
@@ -86,7 +93,7 @@ def _decode_output(data: bytes) -> str:
 
 def _build_shell_command(command: str) -> list[str]:
     if os.name == "nt":
-        script = command + _POWERSHELL_EXIT_TAIL
+        script = _POWERSHELL_PROGRESS_OFF + command + _POWERSHELL_EXIT_TAIL
         encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
         return ["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]
     return ["bash", "-c", command]

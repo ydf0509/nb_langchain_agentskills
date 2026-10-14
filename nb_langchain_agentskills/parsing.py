@@ -55,6 +55,13 @@ def parse_skill_md(content: str) -> tuple[dict[str, Any], str]:
     return frontmatter, body
 
 
+def _normalize_allowed_tools(value: Any) -> Any:
+    """规范里 `allowed-tools` 是空格分隔的工具名字符串，归一为 list 再校验。"""
+    if isinstance(value, str):
+        return [t.strip(",").strip() for t in value.split() if t.strip(",").strip()]
+    return value
+
+
 def metadata_from_frontmatter(frontmatter: dict[str, Any], source: str = "local") -> SkillMetadata:
     """Validate a frontmatter mapping and convert it to SkillMetadata.
 
@@ -63,6 +70,8 @@ def metadata_from_frontmatter(frontmatter: dict[str, Any], source: str = "local"
     """
     data = dict(frontmatter)
     data.pop("source", None)
+    if "allowed-tools" in data:
+        data["allowed-tools"] = _normalize_allowed_tools(data["allowed-tools"])
     try:
         return SkillMetadata(source=source, **data)
     except Exception as exc:

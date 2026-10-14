@@ -92,7 +92,7 @@ Read `references/forms.md` for form field conventions.
 Run `scripts/fill.py` to fill forms.
 ```
 
-`name` 必填：小写字母数字与单个内部连字符，不超过 64 字符（[agentskills.io](https://agentskills.io) 规范）。`description` 必填且不超过 1024 字符，写清楚何时适用——agent 靠它判断要不要用这个 skill。其余字段（`license` / `compatibility` / `metadata` / `allowed_tools` 及任意自定义字段）解析后透传；`source` 是保留字，会被忽略。
+`name` 必填：小写字母数字与单个内部连字符，不超过 64 字符（[agentskills.io](https://agentskills.io) 规范）。`description` 必填且不超过 1024 字符，写清楚何时适用——agent 靠它判断要不要用这个 skill。其余字段（`license` / `compatibility` / `metadata` / `allowed-tools` 及任意自定义字段）解析后透传；其中 `compatibility` 按规范为字符串，`allowed-tools` 按规范接受空格分隔的工具名字符串并解析为列表；`source` 是保留字，会被忽略。
 
 ## 工具
 

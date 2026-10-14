@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SKILL_NAME_PATTERN = re.compile(r"^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$")
 MAX_NAME_LENGTH = 64
@@ -29,14 +29,17 @@ class SkillMetadata(BaseModel):
     round-trip through ``model_dump``.
     """
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     name: str
     description: str
     license: str | None = None
-    compatibility: dict | None = None
+    # 规范字段是字符串（≤500 字符），描述环境要求，如 "Requires Python 3.14+ and uv"。
+    compatibility: str | None = None
     metadata: dict | None = None
-    allowed_tools: list[str] | None = None
+    # 规范字段名是 kebab-case 的 `allowed-tools`，值为空格分隔字符串；
+    # 解析阶段已归一为 list，这里用别名绑定。
+    allowed_tools: list[str] | None = Field(default=None, alias="allowed-tools")
     source: str = "local"
 
     @field_validator("name")
