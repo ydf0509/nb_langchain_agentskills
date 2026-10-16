@@ -268,9 +268,53 @@ def test_guidance_does_not_mention_null_coalescing():
     assert "??" not in sr.render_shell_guidance(_info("powershell", "5.1.22621.6133"))
 
 
-def test_guidance_always_recommends_script_files():
-    for family in ("pwsh", "powershell", "cmd", "bash", "other"):
-        assert "script file" in sr.render_shell_guidance(_info(family))
+def test_guidance_mentions_script_files_only_where_they_are_needed():
+    """实测：多行在 pwsh / 5.1 / bash 都能直接跑；只有 cmd 的换行会静默截断，才需要 .bat。"""
+    assert "script file" not in sr.render_shell_guidance(_info("pwsh", "7.6.7", ("chain_ops",)))
+    assert "script file" not in sr.render_shell_guidance(_info("powershell", "5.1.22621.6133"))
+    assert "script file" not in sr.render_shell_guidance(_info("bash", "", ("chain_ops",)))
+    assert ".bat file" in sr.render_shell_guidance(_info("cmd", "", ("chain_ops",)))
+
+
+def test_guidance_states_the_powershell_backtick_escape_rule():
+    for family in ("pwsh", "powershell"):
+        text = sr.render_shell_guidance(_info(family, "7.6.7"))
+        assert "Escape with ` (backtick), not \\" in text
+        assert "here-string" in text
+
+
+def test_guidance_tells_cmd_that_newlines_truncate():
+    text = sr.render_shell_guidance(_info("cmd", "", ("chain_ops",)))
+    assert "newline silently drops" in text
+    assert "%VAR% expands even inside quotes" in text
+    assert "escape with `^`" in text
+
+
+def test_guidance_tells_bash_the_backslash_escape_and_backtick_substitution():
+    text = sr.render_shell_guidance(_info("bash", "", ("chain_ops",)))
+    assert "Escape with `\\`" in text
+    assert "backtick runs command substitution" in text
+    assert "Multi-line commands work as written" in text
+
+
+def test_guidance_never_contains_forbidden_sentences():
+    """负面清单：这些句子都被实测否定过，禁止再出现（防止以后有人加回来）。"""
+    forbidden = (
+        # 多行在 pwsh/5.1/bash 都能跑，"多行就得写脚本文件"是错的
+        "write a script file and run it instead of inlining",
+        # 实测空格/引号/反斜杠/%/;/| 都原样通过，真问题是 \" 这种转义风格
+        "avoid nested quotes",
+        "Native arguments",
+        # ?? 是表达式层空值合并，命令串里用不到，且易被误读成命令链运算符
+        "??",
+        # 过强：Git 的 grep.exe 在 pwsh 下能跑
+        "NEVER use Linux commands",
+    )
+    for family in ("pwsh", "powershell", "cmd", "bash", "sh", "other"):
+        for caps in ((), ("chain_ops",)):
+            text = sr.render_shell_guidance(_info(family, "7.6.7", caps))
+            for bad in forbidden:
+                assert bad not in text, f"{family}/{caps} 出现禁句: {bad!r}"
 
 
 # --- 解码 -------------------------------------------------------------------

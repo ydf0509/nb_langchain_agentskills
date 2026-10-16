@@ -140,7 +140,10 @@ def render_shell_report(info: ShellInfo) -> dict[str, str | None]:
 def render_shell_guidance(info: ShellInfo) -> str:
     """Syntax guidance for the model, derived from the resolved shell.
 
-    Branches on ``family``/``capabilities`` — never on the OS name, so a
+    Every sentence here is verified against the real shell (see
+    ``tests/test_shell_truth.py``) — a wrong sentence makes the model write
+    commands that fail, which costs far more than the extra tokens it saves.
+    Branches on ``family``/``capabilities``, never on the OS name, so a
     non-PowerShell shell configured on Windows is described correctly.
     """
     caps = info.capabilities
@@ -156,25 +159,29 @@ def render_shell_guidance(info: ShellInfo) -> str:
                 "`&&` and `||` are NOT supported (Windows PowerShell 5.1); "
                 "chain with `cmd1; if ($?) { cmd2 }` instead."
             )
+        lines.append(
+            "Escape with ` (backtick), not \\ — a backslash-escaped quote `\\\"` breaks the command."
+        )
+        lines.append(
+            "Multi-line commands work as written; write a code file with a here-string "
+            "@'...'@ (literal, no interpolation)."
+        )
     elif info.family == "cmd":
         lines = [
-            'Commands MUST use cmd.exe syntax (`&&`, `dir`, `del`, `type`); '
-            'quoting is `"` only, and `%VAR%` expands even inside quotes.',
+            "Commands MUST use cmd.exe syntax; chain with `&&` (or `&`).",
+            "A newline silently drops everything after it — put multi-line work in a .bat file.",
+            'Only `"` quotes anything, and %VAR% expands even inside quotes; escape with `^`, not `\\`.',
         ]
     elif info.family in ("bash", "sh", "zsh"):
-        lines = ["Commands MUST use bash/sh syntax."]
+        lines = [
+            "Commands MUST use bash syntax; `&&`, `||` and $VAR work as in POSIX shell.",
+            'Escape with `\\` ("a \\" b" is fine); a backtick runs command substitution.',
+            "Multi-line commands work as written.",
+        ]
         if _is_windows():
-            lines.append(
-                "This is an MSYS/Git Bash shell on Windows: Windows paths appear as `/d/codes/...`, "
-                "backslash paths get translated, and arguments that look like paths may be rewritten — "
-                "prefer MSYS-style paths."
-            )
+            lines.append("On Windows this is Git Bash/MSYS: paths are MSYS-style (/c/Users/...).")
     else:
-        lines = ["Unknown shell: conservative syntax only — no `&&`, one command per call."]
-    lines.append(
-        "For multi-line commands or several quoting layers, write a script file and run it "
-        "instead of inlining it."
-    )
+        lines = ["Unknown shell: one command per call, no `&&` chaining, no quotes inside quotes."]
     return " ".join(lines)
 
 

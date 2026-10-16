@@ -28,7 +28,7 @@ from .shell_resolve import (
     resolve_shell,
 )
 
-__version__ = "0.9.1"
+__version__ = "0.9.2"
 
 __all__ = [
     "ALL_TOOL_NAMES",
