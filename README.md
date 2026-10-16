@@ -8,7 +8,7 @@ LangChain 的 Agent Skills（SKILL.md）工具包：扫描 skill 目录，把 sk
 - **多目录合并**：可同时挂载多个 skills 目录，同名技能后者覆盖（last wins），天然支持"全局技能 + 项目技能"叠加。
 - **运行时黑白名单**：黑名单与白名单都对"列出、加载、读文件、解析目录"四条链路生效，不存在"列表看不见但仍能加载"；名单集合按引用持有，原地增删立即生效，无需重建 agent。
 - **渐进式披露**：系统提示只注入技能名与一句话描述，正文、文件、脚本在 agent 调用工具时才按需加载，不占用额外上下文。
-- **跨平台脚本执行**：内置命令执行器（Windows 走 PowerShell、POSIX 走 bash），自动把技能根目录与 `scripts/` 注入 `PYTHONPATH`，超时终止进程树（默认 180 秒），并拦截 `../` 路径穿越。
+- **跨平台脚本执行**：内置命令执行器（shell 由 `resolve_shell()` 统一解析：Windows 上有可用的 PowerShell 7 就用 7，否则 5.1；POSIX 用 `$SHELL`/bash；可用 `NB_AGENTSKILLS_SHELL` 钉死），自动把技能根目录与 `scripts/` 注入 `PYTHONPATH`，超时终止进程树（默认 180 秒），并拦截 `../` 路径穿越。
 
 ## 组成
 
@@ -107,7 +107,7 @@ Run `scripts/fill.py` to fill forms.
 
 `skill__execute_script`：
 
-- `command` 是完整 shell 命令字符串，原样交给 shell 执行（Windows 使用 powershell，POSIX 使用 bash）
+- `command` 是完整 shell 命令字符串，原样交给解析到的 shell 执行（具体是哪个 shell 见返回值里的 `shell` 字段：Windows 优先 PowerShell 7，其次 5.1；POSIX 用 `$SHELL`/bash）
 - `working_directory` 为空时为 skill 根；相对路径相对 skill 根解析；不允许逃出 skill 根
 - 执行前把 skill 根目录和 `scripts/` 前插到 `PYTHONPATH`（只影响 python 命令；`enable_pythonpath=False` 可关闭）
 - 超时终止运行；超长输出截断并注明

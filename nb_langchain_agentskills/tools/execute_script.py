@@ -31,8 +31,10 @@ class ExecuteScriptArgs(BaseModel):
     command: str = Field(
         description=(
             "shell command to run  a skill script, e.g. 'python scripts/fill.py --form a.pdf'. "
-            "Executed with the platform shell (powershell on Windows, bash elsewhere) "
-            "with the skill directory as the working directory."
+            "Executed with the shell resolved for this machine (PowerShell 7 when available, "
+            "otherwise the platform shell; pin it with the NB_AGENTSKILLS_SHELL environment "
+            "variable) with the skill directory as the working directory. "
+            "The shell that actually ran the command is reported back in the result's `shell` field."
         )
     )
     max_run_ms: int = Field(
@@ -56,7 +58,9 @@ class ExecuteSkillTool(BaseTool):
         "Run a shell command inside a skill directory, e.g. one of the scripts "
         "the skill provides. Use skill__load_skill first to see the files it "
         "provides. Returns a JSON object: {\"exit_code\": int|null, "
-        "\"duration_ms\": int, \"timed_out\": bool, \"stdout\": str, \"stderr\": str}."
+        "\"duration_ms\": int, \"timed_out\": bool, \"stdout\": str, \"stderr\": str, "
+        "\"shell\": {exe, family, version, fallback_from}} — `shell` reports which "
+        "shell actually ran the command."
     )
     loader: SkillLoader
     args_schema: type[BaseModel] = ExecuteScriptArgs

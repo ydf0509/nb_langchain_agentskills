@@ -4,17 +4,18 @@ Runs a full command string through the platform shell, enforces a timeout
 that kills the entire process tree, captures stdout/stderr with truncation,
 and can prepend skill directories to PYTHONPATH.
 
-On Windows the command runs via ``powershell -EncodedCommand`` (base64 of the
-UTF-16LE script), so quoting inside the command survives the command line
-verbatim. Output is decoded as UTF-8 first and falls back to the ANSI code
-page (``mbcs``, e.g. GBK on Chinese Windows) and then the preferred locale
-encoding when the bytes are not valid UTF-8, so native tools that print in
-the console codepage remain readable even under Python's UTF-8 mode.
+The shell itself comes from :mod:`..shell_resolve` (PowerShell 7 when available,
+pinned shells when configured), so what runs and what the model is told about
+its syntax can never disagree. On PowerShell the script runs via
+``-EncodedCommand`` (base64 of the UTF-16LE script), so quoting inside the
+command survives the command line verbatim. Output is decoded as UTF-8 first
+and falls back to the ANSI code page (``mbcs``, e.g. GBK on Chinese Windows)
+and then the preferred locale encoding when the bytes are not valid UTF-8, so
+native tools that print in the console codepage remain readable even under
+Python's UTF-8 mode.
 """
 
-import base64
 import json
-import locale
 import os
 import signal
 import subprocess
@@ -24,19 +25,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .shell_resolve import build_shell_command, decode_output, render_shell_report, resolve_shell
+
 DEFAULT_TIMEOUT_MS = 180_000
 MAX_OUTPUT_CHARS = 60_000
 
-_POWERSHELL_EXIT_TAIL = (
-    '; if ($LASTEXITCODE -is [int]) { exit $LASTEXITCODE } else { exit 0 }'
-)
-
-# PowerShell serializes its progress stream as CLIXML onto stderr whenever
-# stdout/stderr are redirected, e.g. the "Preparing modules for first use."
-# record emitted on first module autoload. That noise is unrelated to the
-# command itself, so silence the progress stream up front. Assignments emit
-# nothing, so neither stdout nor $LASTEXITCODE is affected.
-_POWERSHELL_PROGRESS_OFF = "$ProgressPreference='SilentlyContinue'; "
+# Environment override for the shell preference; empty means "probe".
+SHELL_ENV_VAR = "NB_AGENTSKILLS_SHELL"
 
 
 @dataclass
@@ -49,6 +44,7 @@ class ExecutionResult:
     stdout: str
     stderr: str
     timed_out: bool
+    shell: dict | None = None
 
     def to_text(self) -> str:
         payload = {
@@ -58,6 +54,8 @@ class ExecutionResult:
             "stdout": self.stdout,
             "stderr": self.stderr,
         }
+        if self.shell is not None:
+            payload["shell"] = self.shell
         return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
@@ -65,38 +63,6 @@ def _truncate(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + f"\n[truncated: showing first {limit} of {len(text)} characters]"
-
-
-def _fallback_encodings() -> list[str]:
-    encodings: list[str] = []
-    if os.name == "nt":
-        encodings.append("mbcs")
-    preferred = locale.getpreferredencoding(False)
-    if preferred and preferred.lower() != "utf-8":
-        encodings.append(preferred)
-    return encodings
-
-
-def _decode_output(data: bytes) -> str:
-    if not data:
-        return ""
-    try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError:
-        for encoding in _fallback_encodings():
-            try:
-                return data.decode(encoding)
-            except (UnicodeDecodeError, LookupError):
-                continue
-        return data.decode("utf-8", errors="replace")
-
-
-def _build_shell_command(command: str) -> list[str]:
-    if os.name == "nt":
-        script = _POWERSHELL_PROGRESS_OFF + command + _POWERSHELL_EXIT_TAIL
-        encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
-        return ["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]
-    return ["bash", "-c", command]
 
 
 def _apply_pythonpath(env: dict[str, str], dirs: list[Path]) -> None:
@@ -110,8 +76,15 @@ class CommandExecutor:
     流式输出的
     """
 
-    def __init__(self, *, enable_pythonpath: bool = True) -> None:
+    def __init__(self, *, enable_pythonpath: bool = True, shell_preference: str | None = None) -> None:
         self.enable_pythonpath = enable_pythonpath
+        # None = read the environment override at run time; "" = probe.
+        self.shell_preference = shell_preference
+
+    def _preference(self) -> str:
+        if self.shell_preference is not None:
+            return self.shell_preference
+        return os.environ.get(SHELL_ENV_VAR, "")
 
     def run(
         self,
@@ -151,8 +124,9 @@ class CommandExecutor:
         else:
             popen_kwargs["start_new_session"] = True
 
+        shell_info = resolve_shell(self._preference())
         start = time.monotonic()
-        proc = subprocess.Popen(_build_shell_command(command), **popen_kwargs)
+        proc = subprocess.Popen(build_shell_command(command, shell_info), **popen_kwargs)
 
         stdout_chunks: list[bytes] = []
         stderr_chunks: list[bytes] = []
@@ -181,7 +155,7 @@ class CommandExecutor:
             if on_output is None:
                 return
             try:
-                on_output(_decode_output(chunk))
+                on_output(decode_output(chunk))
             except Exception:
                 pass
 
@@ -232,9 +206,10 @@ class CommandExecutor:
             command=command,
             exit_code=proc.returncode,
             duration_ms=duration_ms,
-            stdout=_truncate(_decode_output(stdout_data), MAX_OUTPUT_CHARS),
-            stderr=_truncate(_decode_output(stderr_data), MAX_OUTPUT_CHARS),
+            stdout=_truncate(decode_output(stdout_data), MAX_OUTPUT_CHARS),
+            stderr=_truncate(decode_output(stderr_data), MAX_OUTPUT_CHARS),
             timed_out=timed_out,
+            shell=render_shell_report(shell_info),
         )
 
     @staticmethod

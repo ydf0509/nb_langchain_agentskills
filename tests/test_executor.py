@@ -4,7 +4,8 @@ import sys
 
 import pytest
 
-from nb_langchain_agentskills.executor import CommandExecutor, _decode_output
+from nb_langchain_agentskills.executor import CommandExecutor
+from nb_langchain_agentskills.shell_resolve import decode_output as _decode_output
 
 
 def run_py(tmp_path, code, **kwargs):

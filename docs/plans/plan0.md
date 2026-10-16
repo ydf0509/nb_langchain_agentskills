@@ -119,7 +119,7 @@ Loader 对外四个方法（命名以实现时为准，语义如下）：
 
 执行环境：
 
-- shell 选择包内按平台定，不占工具入参：Windows 默认 powershell，POSIX 默认 bash。文档写死。
+- shell 选择不占工具入参：由 `resolve_shell()` 统一解析（Windows 优先"装了且实跑得起来的" pwsh，否则 powershell；POSIX 用 `$SHELL`/bash），可用 `NB_AGENTSKILLS_SHELL` 钉死；显式偏好永远优先于探测。实际使用的 shell 在返回值 `shell` 字段回显，文档不写死具体 shell。
 - 执行前把 skill_root 和 skill_root/scripts 拼到 PYTHONPATH 最前面（`新路径 + os.pathsep + 旧值`，追加不覆盖）。文档写明只对 python 系命令有效，node/ps1/sh 不受益。留总开关，默认开，防 skill 内同名模块劫持用户项目 import。
 - 返回值结构化文本，必须含 exit_code + duration_ms + stdout + stderr 四段，非零退出不吞输出（agent 靠 stderr 自修）。超长输出截断并注明截断量，防失控脚本撑爆上下文。
 - 安全：包内不做命令黑名单。黑名单是语义判断，包做不全。生产安全由宿主框架的审批、沙箱、权限机制负责。但 README 必须有一句等效力声明，否则不发 PyPI。包只守住自己的契约：cwd 不逃出 skill 根。
